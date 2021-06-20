@@ -1,3 +1,9 @@
+// TODO:
+// - trains ans stuff
+// - fake survival
+// - disable hud
+// - op4 boss damage not counted
+
 void print(string text) { g_Game.AlertMessage( at_console, text); }
 void println(string text) { print(text + "\n"); }
 
@@ -8,10 +14,10 @@ dictionary g_toggle_ents; // entities that trigger things (buttons, doors, etc.)
 array<array<array<uint32>>> g_visited_zones;
 array<ExcitementEnt> g_excitement_ents;
 
-const int ZONES_PER_AXIS = 64;
-const Vector MIN_ZONE_COORDS = Vector(-16384, -16384, -16384);
+const int ZONES_PER_AXIS = 128;
+const Vector MIN_ZONE_COORDS = Vector(-32768, -32768, -32768);
 const float ZONE_SIZE = abs(MIN_ZONE_COORDS.x*2) / ZONES_PER_AXIS;
-const int MAX_EXCITEMENT = 200;
+const int MAX_EXCITEMENT = 120;
 
 float g_excitement; // how interesting the game is to watch (0-100)
 bool g_is_boring; // is excitement at 0?
@@ -61,7 +67,7 @@ class PlayerState {
 		
 		if (zoneX < 0 or zoneX >= ZONES_PER_AXIS or zoneY < 0 or zoneY >= ZONES_PER_AXIS or zoneZ < 0 or zoneZ >= ZONES_PER_AXIS) {
 			println("ZONE OUT OF BOUNDS");
-		} else {			
+		} else if (plr.IsAlive()) {			
 			if (g_visited_zones[zoneX][zoneY][zoneZ] & getPlayerBit(plr) == 0) {
 				if (g_visited_zones[zoneX][zoneY][zoneZ] == 0) {
 					newExcitement += 10;
@@ -80,9 +86,6 @@ class PlayerState {
 		if (plr.IsAlive() && !wasAlive) {
 			newExcitement += 5;
 			debugMessage("[AntiStall] " + plr.pev.netname + " was revived! +5 excitement\n");
-		} else if (!plr.IsAlive() && wasAlive) {
-			newExcitement += 5;
-			debugMessage("[AntiStall] " + plr.pev.netname + " was killed! +5 excitement\n");
 		}
 		
 		wasAlive = plr.IsAlive();
@@ -93,7 +96,9 @@ class PlayerState {
 
 
 void add_excitement_ent(CBaseEntity@ ent) {
-	if (ent.IsMonster() && string(ent.pev.classname).Find("monster_") == 0) {
+	string cname = ent.pev.classname;
+	
+	if (isMonster(ent)) {
 		if (g_monster_blacklist.exists(ent.pev.classname)) {
 			return;
 		}
@@ -103,6 +108,11 @@ void add_excitement_ent(CBaseEntity@ ent) {
 	} else if (g_toggle_ents.exists(ent.pev.classname)) {
 		g_excitement_ents.insertLast(ExcitementEnt(EHandle(ent)));
 	}
+}
+
+bool isMonster(CBaseEntity@ ent) {
+	string cname = ent.pev.classname;
+	return (ent.IsMonster() && cname.Find("monster_") == 0) || cname.Find("geneworm_") == 0;
 }
 
 void reload_ents() {
@@ -149,6 +159,8 @@ void PluginInit() {
 	g_monster_blacklist["monster_sitting_scientist"] = true;
 	g_monster_blacklist["monster_tripmine"] = true;
 	g_monster_blacklist["monster_mortar"] = true;
+	g_monster_blacklist["monster_snark"] = true;
+	g_monster_blacklist["monster_babycrab"] = true;
 	
 	g_toggle_ents["func_button"] = true;
 	g_toggle_ents["func_door"] = true;
@@ -212,8 +224,6 @@ void update_excitement() {
 		g_excitement = 0;
 	}
 	
-	// TODO: revives
-	
 	for (int i = 1; i <= g_Engine.maxClients; i++) {
 		CBasePlayer@ plr = g_PlayerFuncs.FindPlayerByIndex(i);
 		
@@ -241,7 +251,7 @@ void update_excitement() {
 			continue;
 		}
 		
-		if (ent.IsMonster() and exciteEnt.wasAlive) {
+		if (isMonster(ent) and exciteEnt.wasAlive) {
 			float damage = exciteEnt.lastHealth - ent.pev.health;
 			
 			if (!ent.IsAlive()) {
@@ -254,7 +264,7 @@ void update_excitement() {
 			}
 			else if (damage > 1) {
 				g_excitement += 3;
-				debugMessage("[AntiStall] " + ent.pev.classname + " took minor damage! +5 excitement\n");
+				debugMessage("[AntiStall] " + ent.pev.classname + " took minor damage! +2 excitement\n");
 			}	
 			
 			exciteEnt.lastHealth = ent.pev.health;
@@ -276,8 +286,8 @@ void update_excitement() {
 	
 	g_excitement_ents = new_ents;
 	
-	if (g_excitement > 200) {
-		g_excitement = 200;
+	if (g_excitement > MAX_EXCITEMENT) {
+		g_excitement = MAX_EXCITEMENT;
 	}
 	
 	debug_excitement();
@@ -298,7 +308,7 @@ void update_excitement() {
 		if (!g_is_boring) {
 			g_is_boring = true;
 			g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "[AntiStall] Excitement level is 0. Make progress or die.\n");
-			g_Scheduler.SetTimeout("checkBoringRestart", 15.0f);
+			g_Scheduler.SetTimeout("checkBoringRestart", 10.0f);
 		}
 	}
 }
@@ -381,7 +391,7 @@ void debug_excitement() {
 		}
 		
 		PlayerState@ state = getPlayerState(plr);
-		if (!state.debug) {
+		if (!state.debug and (!shouldDecreaseExcitement() or g_excitement > 60)) {
 			continue;
 		}
 		
@@ -392,8 +402,8 @@ void debug_excitement() {
 		params.holdTime = 1.0f;
 		
 		params.x = -1;
-		params.y = 0.99;
-		params.channel = 2;
+		params.y = 0.92;
+		params.channel = 4;
 		
 		string info = "Excitement: " + int(g_excitement);
 		
@@ -411,7 +421,7 @@ bool doCommand(CBasePlayer@ plr, const CCommand@ args) {
 	if ( args.ArgC() > 0 ) {
 		if ( args[0] == ".boring" ) {
 			state.debug = !state.debug;
-			g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "[AntiStall] Debug mode " + (state.debug ? "ENABLED" : "DISABLED") + ".\n");
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTTALK, "[AntiStall] Debug mode " + (state.debug ? "ENABLED" : "DISABLED") + ".\n");
 			return true;
 		}
 	}
