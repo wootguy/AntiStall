@@ -3,6 +3,7 @@
 // - fake survival
 // - disable hud
 // - op4 boss damage not counted
+// - trigger camera pause
 
 void print(string text) { g_Game.AlertMessage( at_console, text); }
 void println(string text) { print(text + "\n"); }
@@ -23,6 +24,8 @@ float g_excitement; // how interesting the game is to watch (0-100)
 bool g_is_boring; // is excitement at 0?
 bool g_is_kinda_boring; // excitement levels low but not dangerously low
 float g_last_kinda_boring;
+int g_keepHudOn = 0; // keep hud on for another tick so it's obvious why it's about to be hidden
+bool g_was_enforcing = false;
 
 class ExcitementEnt {
 	EHandle h_ent;
@@ -213,12 +216,23 @@ PlayerState@ getPlayerState(CBasePlayer@ plr) {
 }
 
 void update_excitement() {
-	if (shouldDecreaseExcitement()) {
-		g_excitement -= 0.5f;
-		//g_excitement -= 5.0f;
+	bool should_enforce = shouldEnforceExcitement();
+
+	if (should_enforce) {
+		if (!g_was_enforcing) {
+			g_excitement = MAX_EXCITEMENT;
+			debugMessage("[AntiStall] Excitement is now enforced and limited to " + MAX_EXCITEMENT + ".\n");
+		}
+		g_was_enforcing = true;
 	} else {
-		g_excitement = MAX_EXCITEMENT;
+		if (g_was_enforcing) {
+			debugMessage("[AntiStall] Excitement is no longer enforced nor limited.\n");
+		}
+		g_was_enforcing = false;
 	}
+	
+	g_excitement -= 0.5f;
+	//g_excitement -= 5.0f;
 	
 	if (g_excitement < 0) {
 		g_excitement = 0;
@@ -244,7 +258,8 @@ void update_excitement() {
 		
 		if (ent is null) {
 			if (exciteEnt.isKillable && exciteEnt.wasAlive) {
-				int exciteAmount = int(exciteEnt.name.Find("monster_")) != -1 ? 20 : 10;
+				int exciteAmount = int(exciteEnt.name.Find("monster_")) != -1 ? 30 : 10;
+				
 				g_excitement += exciteAmount;
 				debugMessage("[AntiStall] " + exciteEnt.name + " was killed! +" + exciteAmount + " excitement\n");
 			}
@@ -255,16 +270,16 @@ void update_excitement() {
 			float damage = exciteEnt.lastHealth - ent.pev.health;
 			
 			if (!ent.IsAlive()) {
-				g_excitement += 20;
-				debugMessage("[AntiStall] " + exciteEnt.name + " was killed! +20 excitement\n");
+				g_excitement += 30;
+				debugMessage("[AntiStall] " + exciteEnt.name + " was killed! +30 excitement\n");
 			}
-			else if (damage >= 50) {
+			else if (damage >= 40) {
 				g_excitement += 10;
 				debugMessage("[AntiStall] " + ent.pev.classname + " took heavy damage! +10 excitement\n");
 			}
-			else if (damage > 1) {
-				g_excitement += 3;
-				debugMessage("[AntiStall] " + ent.pev.classname + " took minor damage! +2 excitement\n");
+			else if (damage >= 1) {
+				g_excitement += 5;
+				debugMessage("[AntiStall] " + ent.pev.classname + " took minor damage! +5 excitement\n");
 			}	
 			
 			exciteEnt.lastHealth = ent.pev.health;
@@ -275,7 +290,7 @@ void update_excitement() {
 				exciteEnt.everUsed = true;
 				
 				bool isReallyCool = int(string(ent.pev.classname).Find("button")) != -1;
-				int neatnessLevel = isReallyCool ? 20 : 10;
+				int neatnessLevel = isReallyCool ? 30 : 10;
 				g_excitement += neatnessLevel;
 				debugMessage("[AntiStall] " + ent.pev.classname + " was used for the first time! +" + neatnessLevel + " excitement\n");
 			}
@@ -286,13 +301,13 @@ void update_excitement() {
 	
 	g_excitement_ents = new_ents;
 	
-	if (g_excitement > MAX_EXCITEMENT) {
+	if (g_excitement > MAX_EXCITEMENT && should_enforce) {
 		g_excitement = MAX_EXCITEMENT;
 	}
 	
 	debug_excitement();
 	
-	if (g_excitement < 20) {
+	if (g_excitement < 20 && should_enforce) {
 		if (!g_is_kinda_boring) {
 			bool isSpammy = g_Engine.time - g_last_kinda_boring < 60;
 			//g_PlayerFuncs.ClientPrintAll(isSpammy ? HUD_PRINTNOTIFY : HUD_PRINTTALK, "[AntiStall] Warning: Excitement level is below 20.\n");
@@ -304,7 +319,7 @@ void update_excitement() {
 		g_is_kinda_boring = false;
 	}
 	
-	if (g_excitement <= 0) {
+	if (g_excitement <= 0 && should_enforce) {
 		if (!g_is_boring) {
 			g_is_boring = true;
 			g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "[AntiStall] Excitement level is 0. Make progress or die.\n");
@@ -378,11 +393,34 @@ bool areSomeDead() {
 	return totalPlayers > 0 and totalDead > 0 and totalDead < totalPlayers;
 }
 
-bool shouldDecreaseExcitement() {
+bool shouldEnforceExcitement() {
 	return g_SurvivalMode.IsActive() && areSomeDead();
 }
 
+string formatInteger(int ival) {
+	string val = "" + ival;
+	string formatted;
+	for (int i = int(val.Length())-1, k = 0; i >= 0; i--, k++) {
+		if (k % 3 == 0 && k != 0) {
+			formatted = "," + formatted;
+		}
+		formatted = "" + val[i] + formatted;
+	}
+	return formatted;
+}
+
 void debug_excitement() {
+	bool shouldHideHud = !shouldEnforceExcitement() or g_excitement > 60;
+	
+	if (shouldHideHud) {
+		if (g_keepHudOn > 0) {
+			g_keepHudOn -= 1;
+			shouldHideHud = false;
+		}
+	} else {
+		g_keepHudOn = 2;
+	}
+
 	for (int i = 1; i <= g_Engine.maxClients; i++) {
 		CBasePlayer@ plr = g_PlayerFuncs.FindPlayerByIndex(i);
 		
@@ -391,7 +429,8 @@ void debug_excitement() {
 		}
 		
 		PlayerState@ state = getPlayerState(plr);
-		if (!state.debug and (!shouldDecreaseExcitement() or g_excitement > 60)) {
+		
+		if (!state.debug and shouldHideHud) {
 			continue;
 		}
 		
@@ -401,14 +440,27 @@ void debug_excitement() {
 		params.fadeoutTime = 0.1;
 		params.holdTime = 1.0f;
 		
+		if (g_excitement < 10) {
+			params.r1 = 255;
+			params.g1 = 16;
+			params.b1 = 16;
+		} else if (g_excitement < 20) {
+			params.r1 = 255;
+			params.g1 = 128;
+			params.b1 = 16;
+		}
+		
 		params.x = -1;
 		params.y = 0.92;
 		params.channel = 4;
 		
-		string info = "Excitement: " + int(g_excitement);
+		string info = "Excitement: " + formatInteger(int(g_excitement));
 		
-		if (!shouldDecreaseExcitement()) {
-			info = "Excitement: N/A";
+		if (!shouldEnforceExcitement()) {
+			info += "\n(not enforced)";
+			params.r1 = 96;
+			params.g1 = 16;
+			params.b1 = 255;
 		}
 		
 		g_PlayerFuncs.HudMessage(plr, params, info);
