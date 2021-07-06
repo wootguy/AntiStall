@@ -18,7 +18,7 @@ array<ExcitementEnt> g_excitement_ents;
 const int ZONES_PER_AXIS = 128;
 const Vector MIN_ZONE_COORDS = Vector(-32768, -32768, -32768);
 const float ZONE_SIZE = abs(MIN_ZONE_COORDS.x*2) / ZONES_PER_AXIS;
-const int MAX_EXCITEMENT = 120;
+CCVar@ g_maxExcitement;
 
 float g_excitement; // how interesting the game is to watch (0-100)
 bool g_is_boring; // is excitement at 0?
@@ -148,6 +148,8 @@ void PluginInit() {
 	
 	g_Scheduler.SetInterval("update_excitement", 0.5f, -1);
 	
+	@g_maxExcitement = CCVar("maxExcitement", 120, "Time before players are killed for making no progress", ConCommandFlag::AdminOnly);
+	
 	g_monster_blacklist["monster_barney_dead"] = true;
 	g_monster_blacklist["monster_cockroach"] = true;
 	g_monster_blacklist["monster_furniture"] = true;
@@ -194,7 +196,7 @@ void MapActivate() {
 		}
 	}
 	
-	g_excitement = MAX_EXCITEMENT;
+	g_excitement = g_maxExcitement.GetInt();
 	g_is_boring = false;
 	g_last_kinda_boring = -999;
 	g_is_kinda_boring = false;
@@ -220,8 +222,8 @@ void update_excitement() {
 
 	if (should_enforce) {
 		if (!g_was_enforcing) {
-			g_excitement = MAX_EXCITEMENT;
-			debugMessage("[AntiStall] Excitement is now enforced and limited to " + MAX_EXCITEMENT + ".\n");
+			g_excitement = g_maxExcitement.GetInt();
+			debugMessage("[AntiStall] Excitement is now enforced and limited to " + g_maxExcitement.GetInt() + ".\n");
 		}
 		g_was_enforcing = true;
 	} else {
@@ -305,8 +307,8 @@ void update_excitement() {
 	
 	g_excitement_ents = new_ents;
 	
-	if (g_excitement > MAX_EXCITEMENT && should_enforce) {
-		g_excitement = MAX_EXCITEMENT;
+	if (g_excitement > g_maxExcitement.GetInt() && should_enforce) {
+		g_excitement = g_maxExcitement.GetInt();
 	}
 	
 	debug_excitement();
