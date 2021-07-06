@@ -267,6 +267,10 @@ void update_excitement() {
 		}
 		
 		if (isMonster(ent) and exciteEnt.wasAlive) {
+			if (ent.IRelationshipByClass(CLASS_PLAYER) <= 0) {
+				continue; // ignore allies
+			}
+			
 			float damage = exciteEnt.lastHealth - ent.pev.health;
 			
 			if (!ent.IsAlive()) {
