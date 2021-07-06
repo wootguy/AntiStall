@@ -13,7 +13,7 @@ Circling around the same areas forever eventually gets you killed. With many pla
 The default timer and time bonuses are probably too high to be effective against stallers. Stallers shouldn't have the freedom to make a little progress and then do nothing for a full minute, but there should be enough time to get through cutscene sections like hl_c13_a4. I think 90 max excitement is probably the sweet spot, but that needs lots more testing.
 
 # CVars
-`as_command antistall.maxExcitement 120` sets the excitement limit. The exciement meter decreases by 1 each second when no progress is made.
+`as_command antistall.maxExcitement 120` sets the excitement limit. The excitement meter decreases by 1 each second when no progress is made.
 
 # Commands
 `.boring` Enables debug mode. The excitement meter is shown at all times and messages are shown in the notifcation area whenever progress is made.
